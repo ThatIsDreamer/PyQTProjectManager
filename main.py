@@ -1,11 +1,20 @@
 from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QFileDialog, QRadioButton, QVBoxLayout, QGroupBox
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QFileDialog, QRadioButton, QVBoxLayout, QGroupBox, \
+    QMessageBox
 from PyQt5.QtWidgets import QMainWindow, QLabel
-from PyQt5 import uic, QtWidgets
+from PyQt5 import uic, QtWidgets, QtCore
 import sys
 import json
 import os
 import shutil
+
+
+
+if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
+    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+
+if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
 
 
 light_theme = """
@@ -78,8 +87,21 @@ class MainScreen(QMainWindow):
         else:
             self.setStyleSheet(light_theme)
 
+        self.renderPorojects()
+
+
+
+    def checkIfProjectExsist(self):
         for el in config["projects"]:
-            print(el)
+            if not os.path.isdir(f'{config["projectsFolder"]}/{el["dir"]}'):
+                config["projects"].remove(el)
+        with open("config.json", "w") as jsonFile:
+            json.dump(config, jsonFile)
+
+    def renderPorojects(self):
+        self.checkIfProjectExsist()
+        for el in config["projects"]:
+            
             group_box = QGroupBox(el["name"])
             group_box_layout = QVBoxLayout()
             font = QFont()
@@ -90,13 +112,42 @@ class MainScreen(QMainWindow):
 
             button = QPushButton(f'Открыть в vscode: {el["name"]}')
             button.clicked.connect(self.openInCode)
-
+            deleteButton = QPushButton(f'Удалить: {el["name"]}')
+            deleteButton.setStyleSheet("""QPushButton {color: red; font-size: 14px}""")
+            deleteButton.clicked.connect(self.delete)
             label = QLabel(f'Тэг: {el["tag"]}')
             group_box_layout.addWidget(label)
             group_box_layout.addWidget(button)
+            group_box_layout.addWidget(deleteButton)
 
             group_box.setLayout(group_box_layout)
             self.verticalLayout.addWidget(group_box)
+
+
+
+    def delete(self):
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Удалить проект?")
+        dlg.setText("Удалить проект?")
+        dlg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        dlg.setIcon(QMessageBox.Question)
+        button = dlg.exec()
+
+        if button == QMessageBox.Yes:
+            projectname = self.sender().text().split(":")[1].strip()
+            projectobjindex = [el["name"] for el in config["projects"]].index(projectname)
+
+            shutil.rmtree(f'{config["projectsFolder"]}/{config["projects"][projectobjindex]["dir"]}')
+            del config["projects"][projectobjindex]
+
+            for i in reversed(range(self.verticalLayout.count())):
+                self.verticalLayout.itemAt(i).widget().setParent(None)
+            self.renderPorojects()
+
+            with open("config.json", "w") as jsonFile:
+                json.dump(config, jsonFile)
+
+
 
     def changeTheme(self):
         if config["theme"] == "dark":
@@ -151,6 +202,9 @@ class Settings(QMainWindow):
     def createTemplate(self):
         files, _ = QFileDialog.getOpenFileNames(self, 'Выбери файлы для шаблона', '/',
                                                 "All Files (*);;Text Files (*.txt)")
+        if len(files) == 0:
+            return
+
         template = {"filling": []}
         for file in files:
             filetemp = {"fileName": file.split("/")[-1]}

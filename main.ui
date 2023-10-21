@@ -37,7 +37,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Настройики</string>
+     <string>настройки</string>
     </property>
    </widget>
    <widget class="QWidget" name="verticalLayoutWidget">
