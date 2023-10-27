@@ -4,10 +4,93 @@ from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QFileDialog, QRa
 from PyQt5.QtWidgets import QMainWindow, QLabel
 from PyQt5 import uic, QtWidgets, QtCore
 import sys
-import json
 import os
 import shutil
+import sqlite3
 
+con = sqlite3.connect("config.sqlite")
+con.row_factory = sqlite3.Row
+cur = con.cursor()
+
+def DeletProj(id):
+    cur.execute(f"""
+        DELETE from projects
+        where id = {id}
+    """)
+    con.commit()
+
+
+def GetProp(where, what):
+    result = cur.execute(f"""
+        select {what} from {where}
+    """).fetchall()
+    return [dict(row) for row in result]
+
+
+def GetTemplate(name):
+    result = cur.execute(f"""
+        select * from templates
+        where name = "{name}"
+    """).fetchall()
+    return [dict(row) for row in result][0]
+
+
+def GetAllProjects():
+    result = cur.execute(f"""
+          select * from projects
+    """).fetchall()
+    return [dict(row) for row in result]
+
+
+def GetProject(name):
+    result = cur.execute(f"""
+          select * from Projects
+          where name = "{name}"
+    """).fetchall()
+    return [dict(row) for row in result]
+
+
+def GetAllTags():
+    result = cur.execute(f"""
+          select DISTINCT name from Tags
+    """).fetchall()
+    return [dict(row)["name"] for row in result]
+
+
+def GetAllTemplates():
+    result = cur.execute(f"""
+          select * from Templates
+    """).fetchall()
+    return [dict(row) for row in result]
+
+
+def TemplateCreate(template):
+    cur.execute(f"""
+        INSERT INTO Templates(name, filling) VALUES("{template["name"]}", "{template["filling"]}")
+    """)
+    con.commit()
+
+
+def AddTag(tag):
+    cur.execute(f"""
+        INSERT INTO Tags(name) VALUES("{tag}")
+    """)
+    con.commit()
+
+
+def UpdateConfig(prop, val):
+    cur.execute(f"""
+        UPDATE config
+        set {prop} = "{val}"
+    """)
+    con.commit()
+
+
+def CreateProject(proj):
+    cur.execute(f"""
+        INSERT INTO Projects(name, dir, tag) VALUES("{proj["name"]}", "{proj["dir"]}", "{proj["tag"]}")
+    """)
+    con.commit()
 
 
 if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
@@ -15,7 +98,6 @@ if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
 
 if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
     QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
-
 
 light_theme = """
       QWidget {
@@ -44,10 +126,13 @@ class FirstSetup(QMainWindow):
         self.initUI()
 
     def initUI(self):
-        global config
+
         global light_theme
         global dark_theme
-        if config["theme"] == "dark":
+        global GetProp
+        global UpdateConfig
+
+        if GetProp("config", "*")[0]["theme"] == "dark":
             self.setStyleSheet(dark_theme)
         else:
             self.setStyleSheet(light_theme)
@@ -56,11 +141,10 @@ class FirstSetup(QMainWindow):
         self.pushButton.clicked.connect(self.openFileDialog)
 
     def openFileDialog(self):
-        config["projectsFolder"] = str(QFileDialog.getExistingDirectory(self, "Выбери папку для проектов"))
+        prfl = str(QFileDialog.getExistingDirectory(self, "Выбери папку для проектов"))
+        UpdateConfig("projectFolder", prfl)
 
-        with open("config.json", "w") as jsonFile:
-            json.dump(config, jsonFile)
-        if config["projectsFolder"] != "":
+        if prfl != "":
             self.close()
             self.open_mainscreen()
 
@@ -75,33 +159,36 @@ class MainScreen(QMainWindow):
         self.initUI(args)
 
     def initUI(self, args):
-        global config
         global light_theme
         global dark_theme
+        global GetProp
+        global UpdateConfig
+        global GetAllProjects
+        global DeletProj
 
         uic.loadUi("main.ui", self)
         self.createProjectBtn.clicked.connect(self.openProjectCreateScreen)
         self.settingButton.clicked.connect(self.openSettings)
-        if config["theme"] == "dark":
+
+        if GetProp("config", "*")[0]["theme"] == "dark":
             self.setStyleSheet(dark_theme)
         else:
             self.setStyleSheet(light_theme)
 
         self.renderPorojects()
 
-
-
     def checkIfProjectExsist(self):
-        for el in config["projects"]:
-            if not os.path.isdir(f'{config["projectsFolder"]}/{el["dir"]}'):
-                config["projects"].remove(el)
-        with open("config.json", "w") as jsonFile:
-            json.dump(config, jsonFile)
+        prjts = GetAllProjects()
+        for el in prjts:
+            if not os.path.isdir(f'{GetProp("config", "ProjectFolder")[0]["projectFolder"]}/{el["dir"]}'):
+                DeletProj(el["id"])
+                print("DELETING!!!!", el["id"])
 
     def renderPorojects(self):
         self.checkIfProjectExsist()
-        for el in config["projects"]:
-            
+        prjts = GetAllProjects()
+        for el in prjts:
+
             group_box = QGroupBox(el["name"])
             group_box_layout = QVBoxLayout()
             font = QFont()
@@ -123,8 +210,6 @@ class MainScreen(QMainWindow):
             group_box.setLayout(group_box_layout)
             self.verticalLayout.addWidget(group_box)
 
-
-
     def delete(self):
         dlg = QMessageBox(self)
         dlg.setWindowTitle("Удалить проект?")
@@ -135,22 +220,18 @@ class MainScreen(QMainWindow):
 
         if button == QMessageBox.Yes:
             projectname = self.sender().text().split(":")[1].strip()
-            projectobjindex = [el["name"] for el in config["projects"]].index(projectname)
+            project = GetProject(projectname)[0]
 
-            shutil.rmtree(f'{config["projectsFolder"]}/{config["projects"][projectobjindex]["dir"]}')
-            del config["projects"][projectobjindex]
+            shutil.rmtree(f'{GetProp("config", "projectFolder")[0]["projectFolder"]}/{project["dir"]}')
+
+            DeletProj(project["id"])
 
             for i in reversed(range(self.verticalLayout.count())):
                 self.verticalLayout.itemAt(i).widget().setParent(None)
             self.renderPorojects()
 
-            with open("config.json", "w") as jsonFile:
-                json.dump(config, jsonFile)
-
-
-
     def changeTheme(self):
-        if config["theme"] == "dark":
+        if GetProp("config", "*")[0]["theme"] == "dark":
             self.setStyleSheet(dark_theme)
         else:
             self.setStyleSheet(light_theme)
@@ -161,9 +242,9 @@ class MainScreen(QMainWindow):
 
     def openInCode(self):
         projectname = self.sender().text().split(":")[1].strip()
-        projectobjindex = [el["name"] for el in config["projects"]].index(projectname)
-        print(f'')
-        os.system(f'cmd /c "code {config["projectsFolder"]}/{config["projects"][projectobjindex]["dir"]}"')
+        project = GetProject(projectname)[0]
+        print(project)
+        os.system(f'cmd /c "code {GetProp("config", "projectFolder")[0]["projectFolder"]}/{project["dir"]}"')
 
     def openProjectCreateScreen(self):
         self.second_form = ProjectCreate()
@@ -173,11 +254,12 @@ class MainScreen(QMainWindow):
 class Settings(QMainWindow):
     def __init__(self):
         super().__init__()
-        global config
         global light_theme
         global dark_theme
+        global UpdateConfig
+        global TemplateCreate
 
-        if config["theme"] == "dark":
+        if GetProp("config", "*")[0]["theme"] == "dark":
             self.setStyleSheet(dark_theme)
         else:
             self.setStyleSheet(light_theme)
@@ -188,16 +270,16 @@ class Settings(QMainWindow):
         self.changeThemeBtn.clicked.connect(self.changeTheme)
 
     def changeTheme(self):
-        if config["theme"] == "light":
-            config["theme"] = "dark"
+
+        if GetProp("config", "*")[0]["theme"] == "dark":
+            UpdateConfig("theme", "light")
         else:
-            config["theme"] = "light"
-        if config["theme"] == "dark":
+            UpdateConfig("theme", "dark")
+
+        if GetProp("config", "*")[0]["theme"] == "dark":
             self.setStyleSheet(dark_theme)
         else:
             self.setStyleSheet(light_theme)
-        with open("config.json", "w") as jsonFile:
-            json.dump(config, jsonFile)
 
     def createTemplate(self):
         files, _ = QFileDialog.getOpenFileNames(self, 'Выбери файлы для шаблона', '/',
@@ -217,13 +299,12 @@ class Settings(QMainWindow):
         if done and name:
             template["name"] = name
 
-            config["userTemplates"].append(template)
             print(template)
-            with open("config.json", "w") as jsonFile:
-                json.dump(config, jsonFile)
+
+            TemplateCreate(template)
 
     def changeDir(self):
-        src_folder = config["projectsFolder"]
+        src_folder = GetProp("config", "projectFolder")[0]["projectFolder"]
         dest_folder = str(QFileDialog.getExistingDirectory(self, "Выбери новую папку для проектов"))
 
         items = os.listdir(src_folder)
@@ -232,16 +313,16 @@ class Settings(QMainWindow):
             dest_path = os.path.join(dest_folder, item)
             shutil.move(src_path, dest_path)
 
-        config["projectsFolder"] = dest_folder
-
-        with open("config.json", "w") as jsonFile:
-            json.dump(config, jsonFile)
+        UpdateConfig("projectFolder", dest_folder)
 
 
 class ProjectCreate(QMainWindow):
     def __init__(self, *args):
         super().__init__()
-        global config
+        global GetProp
+        global GetAllTags
+        global AddTag
+        global CreateProject
         self.changeTheme()
         uic.loadUi("projectCreate.ui", self)
 
@@ -253,14 +334,14 @@ class ProjectCreate(QMainWindow):
 
         self.templateRadioBtns = []
         # проходим по каждому шаблону в файле конфигурации
-        for el in config["userTemplates"]:
+        for el in GetProp("Templates", "*"):
             # добовляем radio button в список со всеми raio button
             self.templateRadioBtns.append(QRadioButton(el["name"]))
             self.templateRadioBtns[-1].clicked.connect(self.setTemplate)
             self.templateLayout.addWidget(self.templateRadioBtns[-1])
 
         self.tagRadioBtns = []
-        for el in config["tags"]:
+        for el in GetAllTags():
             self.tagRadioBtns.append(QRadioButton(el))
             self.tagRadioBtns[-1].clicked.connect(self.setTag)
             self.tagLayout.addWidget(self.tagRadioBtns[-1])
@@ -268,7 +349,7 @@ class ProjectCreate(QMainWindow):
         self.ProjectCreateBtn.clicked.connect(self.createProject)
 
     def changeTheme(self):
-        if config["theme"] == "dark":
+        if GetProp("config", "*")[0]["theme"] == "dark":
             self.setStyleSheet(dark_theme)
         else:
             self.setStyleSheet(light_theme)
@@ -277,9 +358,7 @@ class ProjectCreate(QMainWindow):
         name, done = QtWidgets.QInputDialog.getText(
             self, 'Новый тэг', 'Введи название тэга')
         if (done):
-            config["tags"].append(name)
-            with open("config.json", "w") as jsonFile:
-                json.dump(config, jsonFile)
+            AddTag(name)
             self.tagRadioBtns.append(QRadioButton(name))
             self.tagRadioBtns[-1].clicked.connect(self.setTag)
             self.tagLayout.addWidget(self.tagRadioBtns[-1])
@@ -294,24 +373,24 @@ class ProjectCreate(QMainWindow):
     def createProject(self):
         print(self.projectName.text())
         formatedpname = self.projectName.text().lower().replace(' ', '_')
-        currfolder = f'{config["projectsFolder"]}/{formatedpname}'
+        currfolder = f'{GetProp("config", "projectFolder")[0]["projectFolder"]}/{formatedpname}'
         newproject = {
             "name": self.projectName.text(),
             "dir": formatedpname,
             "tag": self.tag
         }
-        config["projects"].append(newproject)
 
+        CreateProject(newproject)
         os.mkdir(currfolder)
+
         if (self.template):
-            templateindex = [el["name"] for el in config["userTemplates"]].index(self.template)
-            if self.template:
-                for el in config["userTemplates"][templateindex]["filling"]:
-                    with open(f'{currfolder}/{el["fileName"]}', 'x') as f:
-                        f.write(el["content"])
+            template = GetTemplate(self.template)
+            template["filling"] = eval(template["filling"])
+            for el in template["filling"]:
+                with open(f'{currfolder}/{el["fileName"]}', 'x') as f:
+                    f.write(el["content"])
         os.system(f'cmd /c "code {currfolder}')
-        with open("config.json", "w") as jsonFile:
-            json.dump(config, jsonFile)
+
         sys.exit(app.exec())
 
 
@@ -322,8 +401,9 @@ def except_hook(cls, exception, traceback):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     sys.excepthook = except_hook
-    config = json.load(open("config.json"))
-    if (config["projectsFolder"] != ''):
+
+    print(GetProp("config", "projectFolder")[0]["projectFolder"])
+    if (GetProp("config", "projectFolder")[0]["projectFolder"] != ''):
         ex = MainScreen()
     else:
         ex = FirstSetup()
