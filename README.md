@@ -8,6 +8,6 @@ PyQT Project manager - это программа, которая помогае�
 - возможность задавать теги своим проектам чтобы легче ориентироваться в них
 - открыть проект в visual studio code
 
-[Техническое задание здесь!](https://hammerhead-celery-f0f.notion.site/PYQT-Project-Manager-0eb15a87d7644d8b8db04d1ce42a669c?pvs=4)
+[Техническое задание здесь и ПЗ тоже!](https://hammerhead-celery-f0f.notion.site/PYQT-Project-Manager-0eb15a87d7644d8b8db04d1ce42a669c?pvs=4)
 
 [Призентцаия!](https://docs.google.com/presentation/d/1E1CEVpTwqq2GsnnP9lAWl4Ch0lT47DYr7Mqj0oqj0Qc/edit?usp=sharing)
